@@ -79,7 +79,11 @@ char const*const KEYBOARD_FILE
         = "/sys/class/leds/keyboard-backlight/brightness";
 
 char const*const BUTTON_FILE
-        = "/sys/class/leds/button-backlight/brightness";
+        = "/sys/devices/virtual/misc/melfas_touchkey/brightness";
+
+// sysfs file for BLN
+char const*const NOTIFICATION_FILE
+        = "/sys/class/misc/backlightnotification/notification_led";
 
 /**
  * device methods
@@ -108,12 +112,13 @@ write_int(char const* path, int value)
     if (fd >= 0) {
         char buffer[20];
         int bytes = sprintf(buffer, "%d\n", value);
+        //LOGE("write_int : %s %d\n", path, value);
         int amt = write(fd, buffer, bytes);
         close(fd);
         return amt == -1 ? -errno : 0;
     } else {
         if (already_warned == 0) {
-            LOGE("write_int failed to open %s\n", path);
+            //LOGE("write_int failed to open %s\n", path);
             already_warned = 1;
         }
         return -errno;
@@ -134,8 +139,8 @@ handle_trackball_light_locked(struct light_device_t* dev)
     if (mode == 7 && g_backlight) {
         mode = 0;
     }
-    LOGV("%s g_backlight = %d, mode = %d, g_attention = %d\n",
-        __func__, g_backlight, mode, g_attention);
+    //LOGV("%s g_backlight = %d, mode = %d, g_attention = %d\n",
+    //    __func__, g_backlight, mode, g_attention);
 
     // If the value isn't changing, don't set it, because this
     // can reset the timer on the breathing mode, which looks bad.
@@ -190,7 +195,8 @@ set_light_buttons(struct light_device_t* dev,
     int on = is_lit(state);
     pthread_mutex_lock(&g_lock);
     g_buttons = on;
-    err = write_int(BUTTON_FILE, on?255:0);
+    /* for BLN 1(on) or 2(off) */
+    err = write_int(BUTTON_FILE, on?1:2);
     pthread_mutex_unlock(&g_lock);
     return err;
 }
@@ -311,13 +317,15 @@ set_light_notifications(struct light_device_t* dev,
 {
     pthread_mutex_lock(&g_lock);
     g_notification = *state;
-    LOGV("set_light_notifications g_trackball=%d color=0x%08x",
-            g_trackball, state->color);
-    if (g_haveTrackballLight) {
-        handle_trackball_light_locked(dev);
-    }
-    handle_speaker_battery_locked(dev);
+    //LOGV("set_light_notifications g_trackball=%d color=0x%08x",
+    //        g_trackball, state->color);
+
+    /* for BLN */
+    int on = is_lit(state);
+    int err = write_int( NOTIFICATION_FILE, on?1:0 );
+
     pthread_mutex_unlock(&g_lock);
+
     return 0;
 }
 
@@ -326,8 +334,8 @@ set_light_attention(struct light_device_t* dev,
         struct light_state_t const* state)
 {
     pthread_mutex_lock(&g_lock);
-    LOGV("set_light_attention g_trackball=%d color=0x%08x",
-            g_trackball, state->color);
+    //LOGV("set_light_attention g_trackball=%d color=0x%08x",
+    //        g_trackball, state->color);
     if (state->flashMode == LIGHT_FLASH_HARDWARE) {
         g_attention = state->flashOnMS;
     } else if (state->flashMode == LIGHT_FLASH_NONE) {
@@ -365,23 +373,17 @@ static int open_lights(const struct hw_module_t* module, char const* name,
     int (*set_light)(struct light_device_t* dev,
             struct light_state_t const* state);
 
+    /* for BLN test */
+    //LOGE("CMD name =>%s\n", name);
+
     if (0 == strcmp(LIGHT_ID_BACKLIGHT, name)) {
         set_light = set_light_backlight;
-    }
-    else if (0 == strcmp(LIGHT_ID_KEYBOARD, name)) {
-        set_light = set_light_keyboard;
     }
     else if (0 == strcmp(LIGHT_ID_BUTTONS, name)) {
         set_light = set_light_buttons;
     }
-    else if (0 == strcmp(LIGHT_ID_BATTERY, name)) {
-        set_light = set_light_battery;
-    }
     else if (0 == strcmp(LIGHT_ID_NOTIFICATIONS, name)) {
         set_light = set_light_notifications;
-    }
-    else if (0 == strcmp(LIGHT_ID_ATTENTION, name)) {
-        set_light = set_light_attention;
     }
     else {
         return -EINVAL;
@@ -415,7 +417,7 @@ const struct hw_module_t HAL_MODULE_INFO_SYM = {
     .version_major = 1,
     .version_minor = 0,
     .id = LIGHTS_HARDWARE_MODULE_ID,
-    .name = "QCT MSM7K lights Module",
-    .author = "Google, Inc.",
+    .name = "Modified QCT MSM7K lights Module",
+    .author = "creams@nexus",
     .methods = &lights_module_methods,
 };
